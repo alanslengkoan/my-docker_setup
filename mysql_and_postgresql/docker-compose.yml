@@ -1,51 +1,90 @@
 services:
+  # Apache + PHP 8.2 + Composer (satu container)
+  app:
+    build:
+      context: ./docker/php
+      args:
+        UID: 1000 # samakan dengan `id -u` di laptop
+        GID: 1000 # samakan dengan `id -g` di laptop
+    image: my-app:php8.2
+    container_name: my-app
+    restart: always
+    ports:
+      - "8080:80"
+    volumes:
+      - ./src:/var/www/html
+    environment:
+      TZ: Asia/Makassar
+    depends_on:
+      mysqldb:
+        condition: service_healthy
+      postgresdb:
+        condition: service_healthy
+    networks:
+      - mynetwork
+
   mysqldb:
+    image: mysql:8.4
     container_name: my-mysql
-    image: mysql:8.0
-    command: --default-authentication-plugin=mysql_native_password
     restart: always
     environment:
+      MYSQL_ROOT_PASSWORD: my_pass
+      MYSQL_DATABASE: mydb
       MYSQL_USER: my_root
       MYSQL_PASSWORD: my_pass
-      MYSQL_ROOT_PASSWORD: my_pass
+      TZ: Asia/Makassar
     ports:
       - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -pmy_pass --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
       - mynetwork
 
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin
+    image: phpmyadmin:5.2
     container_name: my-phpmyadmin
     restart: always
     environment:
       PMA_HOST: mysqldb
       PMA_PORT: 3306
-      PMA_USER: root
-      PMA_PASSWORD: my_pass
+      UPLOAD_LIMIT: 64M
     ports:
       - "8081:80"
     depends_on:
-      - mysqldb
+      mysqldb:
+        condition: service_healthy
     networks:
       - mynetwork
 
   postgresdb:
-    container_name: my-postgres
     image: postgres:16-alpine
+    container_name: my-postgres
     restart: always
     environment:
       POSTGRES_USER: my_root
       POSTGRES_PASSWORD: my_pass
       POSTGRES_DB: mydb
+      TZ: Asia/Makassar
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U my_root -d mydb"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - mynetwork
 
   pgadmin:
-    image: dpage/pgadmin4
+    image: dpage/pgadmin4:9
     container_name: my-pgadmin
     restart: always
     environment:
@@ -53,8 +92,11 @@ services:
       PGADMIN_DEFAULT_PASSWORD: my_pass
     ports:
       - "8082:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     depends_on:
-      - postgresdb
+      postgresdb:
+        condition: service_healthy
     networks:
       - mynetwork
 
@@ -63,4 +105,6 @@ networks:
     driver: bridge
 
 volumes:
+  mysql_data:
   postgres_data:
+  pgadmin_data:
